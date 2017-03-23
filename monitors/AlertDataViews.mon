@@ -1,0 +1,325 @@
+//*****************************************************************************
+// Title:         AlertDataViews
+// Description:   AlertDataViews: create dataviews from ATM fraud alert events to display on dashboard
+//
+//*****************************************************************************
+
+/*
+ * $Copyright(c) 2013 Progress Software Corporation. All Rights Reserved.$ 
+ * $Copyright (c) 2013-2017 Software AG, Darmstadt, Germany and/or Software AG USA Inc., Reston, VA, USA, and/or its subsidiaries and/or its affiliates and/or their licensors.$
+ * Use, reproduction, transfer, publication or disclosure is prohibited except as specifically provided for in your License Agreement with Software AG
+ */ 
+package apamax.atmfraud;
+
+using com.apama.dataview.DataViewAddDefinition;
+using com.apama.dataview.DataViewAddItem;
+using com.apama.dataview.DataViewUpdateItem;
+using com.apama.dataview.DataViewItem;
+using com.apama.dataview.DataViewException;
+/**
+ * Used by dashboard user to
+ * delete all DataView items,
+ * if desired.
+ */
+event Purge {
+
+}
+
+/**
+ * Simple monitor to generate data views to display the Withdrawals
+ * and the fraud alerts create by the Query ATM fraud demo.
+ */
+monitor CreateDataViews {
+	// Purge dataviews after this many DV items.
+	integer purge_threshold;
+	
+	/**
+	 * event to create withdrawal, repeated withdrawal and improbable withdrawal data view items
+	 * also update the corresponding data view item based on the ATM withdrawal.
+	 */
+	event DVCounter {
+		string dvName;
+		integer itemId; 
+		integer value;
+		action init(string name, string fieldname) {
+			self.dvName := name;
+			value := 0;
+			DataViewAddDefinition add:=new DataViewAddDefinition;
+			add.dvName := dvName;
+			add.dvDisplayName := name;
+			add.fieldNames := [fieldname];
+			add.fieldTypes := ["integer"];
+			route add;
+			DataViewAddItem item:= new DataViewAddItem;
+			item.dvName := dvName;
+			item.owner := "*";
+			item.timeStamp := currentTime;
+			item.fieldValues := [value.toString()];
+			item.msgId := integer.getUnique().toString();
+			route item;
+			on DataViewItem(msgId = item.msgId) as ack {
+				itemId := ack.dvItemId;
+			}
+		}
+
+		action increment() {
+			value:=value + 1;
+			DataViewUpdateItem update := new DataViewUpdateItem;
+			update.dvName := dvName;
+			update.timeStamp := currentTime;
+			update.fieldValues:= [value.toString()];
+			update.dvItemId := itemId;
+			route update;
+		}
+	}
+	
+	// no.of all ATM withdrawals
+	DVCounter totalwithdrawals;
+	
+	// no.of improbable max alerts
+	DVCounter totalImprobableAlerts;
+	
+	// no.of repeated max alerts
+	DVCounter totalRepeatedMaxAlerts;
+    
+	DVCounter dv_withdrawal := new DVCounter;
+	DVCounter dv_repeatedWithdrawal := new DVCounter;
+	DVCounter dv_improbableWithdrawal := new DVCounter;
+	
+	// Manage the number of DataViewItems created by storing their IDs in a dictionary.
+	// Each time the number reaches the purge threshold, we cull the oldest 50%.
+	dictionary <integer, string> withdrawalDVs;
+	dictionary <integer, string> fraud1DVs;
+	dictionary <integer, string> fraud2DVs;
+	
+	action onload() {
+		monitor.subscribe("apamax.fraud_alerts");
+		monitor.subscribe("apamax.withdrawals");
+		// Beyond this number of DV items
+		// we purge the oldest 50%.
+		purge_threshold := 500;
+
+		// Create the DV defns.
+		createWithdrawals();
+		createFraud1Alerts();
+		createFraud2Alerts();
+
+		// Create the DV items
+		dv_withdrawal.init("AllWithdrawals","allWithdrawals");
+
+		dv_repeatedWithdrawal.init("RepeatedWithdrawals","repMaxWithdrawals");
+
+		dv_improbableWithdrawal.init("ImprobableWithdrawals","improbableMaxWithdrawals");
+
+		// Listen for withdrawals, alerts, and DataView service events.
+		setUpListeners();
+	}
+
+	action setUpListeners() {
+		on all Withdrawal() as w {
+			createWithdrawalDVItem(w);
+			dv_withdrawal.increment();
+		}
+
+		on all RepeatedMaxWithdrawalsAlert() as f1a {
+			createFraud1AlertDVItem(f1a);
+			dv_repeatedWithdrawal.increment();
+		}
+
+		on all ImprobableWithdrawalAlert() as f2a {
+			createFraud2AlertDVItem(f2a);
+			dv_improbableWithdrawal.increment();
+		}
+
+		on all Purge() as p {
+			purgeAllDataViewItems();
+		}
+
+		// Add exception handlers - just log errors in this demo.
+		on all DataViewException() as dvException {
+			log "*** ATM AlertDataViews monitor error: "+dvException.toString() at ERROR;
+		}
+
+		on all com.apama.dataview.DataViewItemException() as dvItemException {
+			log "*** AlertDataViews monitor error: "+dvItemException.toString() at ERROR;
+		}
+
+		// Manage number of DataView items by storing their IDs,
+		// and culling the oldest half when we get beyond the
+		// purge threshold.
+		on all com.apama.dataview.DataViewItem() as dvItem {
+			string name := dvItem.dvName;
+			if name = "Withdrawals" {
+				withdrawalDVs.add(dvItem.dvItemId, name);
+				if withdrawalDVs.size() > purge_threshold {
+					cullOldDataViewItems(withdrawalDVs, dvItem.dvItemId, name);
+				}
+			}
+			else if name = "RepeatedMaxWithdrawalsAlert" {
+				fraud1DVs.add(dvItem.dvItemId, name);
+				if fraud1DVs.size() > purge_threshold {
+					cullOldDataViewItems(fraud1DVs, dvItem.dvItemId, name);
+				}
+			}
+			else if name = "ImprobableWithdrawalAlert" {
+				fraud2DVs.add(dvItem.dvItemId, name);
+				if fraud2DVs.size() > purge_threshold {
+					cullOldDataViewItems(fraud2DVs, dvItem.dvItemId, name);
+				}
+			}
+		}
+
+		// Remove DataView item IDs when we delete older items.
+		on all com.apama.dataview.DataViewItemDeleted() as dvDeleted {
+			string name := dvDeleted.dvName;
+			if name = "Withdrawals" {
+				withdrawalDVs.remove(dvDeleted.dvItemId); 
+			}
+			else if name = "RepeatedMaxWithdrawalsAlert" {
+				fraud1DVs.remove(dvDeleted.dvItemId);
+			}
+			else if name = "ImprobableWithdrawalAlert" {
+				fraud2DVs.remove(dvDeleted.dvItemId);
+			}
+		}
+	}
+
+	/*
+	 * Create the DataViews.
+	 */
+	action createWithdrawals() {
+		DataViewAddDefinition add := new DataViewAddDefinition;
+		add.dvName := "Withdrawals";
+		add.dvDisplayName := "Withdrawals";
+		add.fieldNames := ["cardNumber","atmId", "amount", "cardHolder"];
+		add.fieldTypes := ["string","string", "integer", "string"];
+		add.keyFields  := [];
+		route add;	
+	}
+
+	action createFraud1Alerts() {
+		DataViewAddDefinition add := new DataViewAddDefinition;
+		add.dvName := "RepeatedMaxWithdrawalsAlert";
+		add.dvDisplayName := "RepeatedMaxWithdrawalsAlert";
+		add.fieldNames := ["atmId", "user1", "amount1", "user2", "amount2", "user3", "amount3", "truePositive"];
+		add.fieldTypes := ["string", "string", "integer", "string", "integer", "string","integer", "boolean"];
+		add.keyFields  := [];
+		route add;	
+	}
+
+	action createFraud2Alerts() {
+		DataViewAddDefinition add := new DataViewAddDefinition;
+		add.dvName := "ImprobableWithdrawalAlert";
+		add.dvDisplayName := "ImprobableWithdrawalAlert";
+		add.fieldNames := ["atmId1","atmId2", "cardNumber", "cardholder1", "cardholder2", "distance", "timeBetweenWithdrawals", "speed", "truePositive"];
+		add.fieldTypes := ["string","string","string","string","string", "float", "float", "float", "boolean"];
+		add.keyFields  := [];
+		route add;	
+	}
+
+	/*
+	 * Create a DataView item for each ATM withdrawal.
+	 */
+	action createWithdrawalDVItem(Withdrawal w) {
+		DataViewAddItem item := new DataViewAddItem;
+		item.dvName := "Withdrawals";
+		item.owner := "*";
+		item.timeStamp := currentTime;
+		item.fieldValues := [w.cardNumber.toString(), w.atm.id, w.amount.toString(), w.cardHolder];
+		route item;	
+	}
+
+	/*
+	 * Create a DataView item for each repeated large withdrawals fraud alert.
+	 */
+	action createFraud1AlertDVItem(RepeatedMaxWithdrawalsAlert f1a) {
+		DataViewAddItem item := new DataViewAddItem;
+		item.dvName := "RepeatedMaxWithdrawalsAlert";
+		item.owner := "*";
+		item.timeStamp := currentTime;
+		// If all users are Joker, it's a true +ve. (Setting this flag makes
+		// it easy to set the red highlight filter in the dashboard table.)
+		boolean isTruePositive := isFraud1_truePositive(f1a.w1.cardHolder, f1a.w2.cardHolder, f1a.w3.cardHolder);
+		item.fieldValues := [f1a.atmId, f1a.w1.cardHolder, f1a.w1.amount.toString(), f1a.w2.cardHolder, f1a.w2.amount.toString(), f1a.w3.cardHolder, f1a.w3.amount.toString(), isTruePositive.toString()];
+		route item;	
+	}
+
+	/*
+	 * Create a DataView item for each improbable withdrawal fraud alert.
+	 */
+	action createFraud2AlertDVItem(ImprobableWithdrawalAlert f2a) {
+		DataViewAddItem item := new DataViewAddItem;
+		item.dvName := "ImprobableWithdrawalAlert";
+		item.owner := "*";
+		item.timeStamp := currentTime;
+		// We display the distance between the ATMS ...
+		float distance := f2a.w1.atm.getDistance(f2a.w2.atm);
+		// ... and also the time taken ...
+		float timeTaken := f2a.w2.time - f2a.w1.time;
+		// Avoid potential divide by zero.
+		if timeTaken = 0.0 {
+			timeTaken := 0.01;
+		}
+		// ... and finally the speed (to show that it's over the "speed limit").
+		float speed := distance / timeTaken;
+		// If either user is a fraudster then it's a true positive. (Setting this flag makes
+		// it easy to set the red highlight filter in the dashboard table.)
+		boolean isTruePositive := isFraud2_truePositive(f2a.w1.cardHolder, f2a.w2.cardHolder);
+		item.fieldValues := [f2a.w1.atm.id, f2a.w2.atm.id, f2a.w1.cardNumber.toString(), f2a.w1.cardHolder, f2a.w2.cardHolder, distance.toString(), timeTaken.toString(), speed.toString(), isTruePositive.toString()];
+		route item;	
+	}
+
+	/*
+	 * User can delete all DataView items by clicking 
+	 * a button on the dashboard.
+	 */
+	action purgeAllDataViewItems() {
+		dictionary<string, string> extraParams := {};
+		route com.apama.dataview.DataViewDeleteAllItems("Delete all Withdrawals", "Withdrawals", extraParams);
+		route com.apama.dataview.DataViewDeleteAllItems("Delete all Fraud1 alerts", "RepeatedMaxWithdrawalsAlert", extraParams);
+		route com.apama.dataview.DataViewDeleteAllItems("Delete all Fraud2 alerts", "ImprobableWithdrawalAlert", extraParams);
+
+		// Reset dictionaries that track the number of DV items
+		withdrawalDVs.clear();
+		fraud1DVs.clear();
+		fraud2DVs.clear();	
+	}
+
+	/*
+	 * Manage the number of dataviews created by culling the
+	 * oldest 50% once we reach the pruge threshold.
+	 */
+	action cullOldDataViewItems(dictionary <integer, string> dvDict, integer mostRecent, string name) {
+		// Fields required for delete event.
+		dictionary<string, string> extraParams := {};
+		sequence <string> keyFields := [];
+		sequence <integer> dvItemIds := dvDict.keys();
+		integer dvItemId;
+		for dvItemId in dvItemIds {
+			// When we hit the purge threshold, we
+			// delete the oldest 50% of DV items.
+			if dvItemId < mostRecent - (purge_threshold/2) {
+				route com.apama.dataview.DataViewDeleteItem("Delete old DataView item", name, dvItemId, keyFields, extraParams);
+			}
+		}
+		log "*** AlertDataViews monitor purging oldest 50% of DV items for DV: "+name at INFO;
+	}
+
+	/*
+	 * Returns true if Alert for multiple large withdrawals is true +ve
+	 */
+	action isFraud1_truePositive(string user1, string user2, string user3) returns boolean {
+		return user1 = "Joker" and user2 = "Joker" and user3 = "Joker";
+	}
+
+	/*
+	 * Returns true if Alert for card skimming is true +ve
+	 */
+	action isFraud2_truePositive(string user1, string user2) returns boolean {
+		dictionary <string, integer> fraudsters := {"Riddler":1, "Penguin":2, "Catwoman":3, "Two-face":4, "Mad Hatter":5};
+		// It's a card skimming scam, so if either user in the alert is a known bad guy,
+		// it's a genuine fraud, otherwise it's a good guy who has happened to exceed the speed
+		// limit travelling between ATMs.
+		return fraudsters.hasKey(user1) or fraudsters.hasKey(user2);
+	}
+}

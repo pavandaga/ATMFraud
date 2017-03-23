@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<IUE id="ApamaSamples_ATMFraud"  xmlns="http://www.jaxb.iue.branding.tools.progress.com">
+	<name>ATM Fraud</name>
+	<category>demo</category>
+	<publicationDate>2016-12-30</publicationDate>
+	<shortDescription>This demo is an ATM Fraud detection application implemented in Queries.</shortDescription>
+	<description>The ATM Fraud demo shows Apama's discrete event matching capability in performing fraud detection by analyzing ATM (Automated Teller Machine) withdrawal patterns using Apama queries. The queries can be parameterized to add thresholds/constraints for the alerts to be triggered. The demo contains a monitor that generates ATM withdrawal events, both from genuine users, and from users committing two different types of fraud. All users move at varying speeds around a network of 400 ATMs making withdrawals for varying amounts.</description>
+	<image>atmfraud.jpg</image>
+	<size>256000</size>
+	<metadata>
+		<contributionType id="com.progress.tools.branding.iue.apama.customsampletype">
+			<properties key="samplePath">
+				<simpleValue>../../ATMFraud</simpleValue>
+			</properties>
+		</contributionType>
+		<filters>
+			<topic>Banking</topic>
+			<complexity>Getting Started</complexity>
+			<productsSupported>
+				<product version="[9.9.0, 12.0.0]" id="com.apama.studio.product">
+					<capability>Apama</capability>
+				</product>
+			</productsSupported>
+		</filters>
+	</metadata>
+	<moredetails>../readme.htm</moredetails>
+</IUE>

@@ -1,0 +1,12 @@
+#################################################################################################################################################################################
+# $Copyright(c) 2013 Progress Software Corporation. All Rights Reserved.$
+# $Copyright (c) 2013-2015, 2017 Software AG, Darmstadt, Germany and/or Software AG USA Inc., Reston, VA, USA, and/or its subsidiaries and/or its affiliates and/or their licensors.$
+# Use, reproduction, transfer, publication or disclosure is prohibited except as specifically provided for in your License Agreement with Software AG
+#################################################################################################################################################################################
+apamax.atmfraud.Start()
+
+# Create a new instance for RepeatedMaxWithdrawals query
+com.apama.scenario.Create("QRY_apamax.atmfraud.DetectRepeatedMaxWithdrawals", 1, "*", ["600"])
+
+# Create a new instance for ImprobableWithdrawalLocations query
+com.apama.scenario.Create("QRY_apamax.atmfraud.ImprobableWithdrawalLocations", 2, "*", ["100.0"])

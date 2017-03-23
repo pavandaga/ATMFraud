@@ -1,0 +1,149 @@
+/*
+ * $Copyright(c) 2013 Progress Software Corporation. All Rights Reserved.$ 
+ * $Copyright (c) 2013-2017 Software AG, Darmstadt, Germany and/or Software AG USA Inc., Reston, VA, USA, and/or its subsidiaries and/or its affiliates and/or their licensors.$
+ * Use, reproduction, transfer, publication or disclosure is prohibited except as specifically provided for in your License Agreement with Software AG
+ */ 
+package apamax.atmfraud;
+
+/**
+ * The person, genuine or fraudulent,
+ * making an ATM withdrawal.
+ */
+event User {
+	string name;
+	integer cardId;
+}
+
+/**
+ * Represents a single ATM
+ * in the network.
+ */
+event ATM {
+	string id;
+	location loc;
+	
+	/**
+	 * Finds the distance on the grid from this ATM to the destination ATM.
+	 * @param destination The destination ATM.
+	 * @returns Returns the distance from this ATM to the destination ATM.
+	 */ 
+	action getDistance(ATM destination) returns float {
+		// Use Pythagoras's theorem to find the distance.
+		return ((destination.loc.x1 - loc.x1).pow(2.0) + (destination.loc.y1 - loc.y1).pow(2.0)).sqrt();
+	}
+}
+
+/**
+ * The network of ATMs consists
+ * of a 20 by 20 grid of evenly
+ * spaced machines, at distances
+ * of 100 km.
+ */
+event ATMFactory {
+	/**
+	 * Returns a randomly chosen ATM in a 20*20 grid.
+	 * @returns An ATM event instance.
+	 */ 
+	static action getATM() returns ATM {
+		float x := (integer.rand(20) * 100).toFloat();
+		float y := (integer.rand(20) * 100).toFloat();
+		// Get the name of the location for these co-ords.
+		string name := ATMLocations.getLocationForCoords(x.toString()+","+y.toString());
+		return ATM(name, location(x,y,x,y));
+	}
+}
+
+/**
+ * Represents a withdrawal
+ * from an ATM.
+ */
+event Withdrawal {
+	integer cardNumber;
+	ATM atm;
+	integer amount;
+	string cardHolder;
+	float time;
+}
+
+/**
+ * Alerts us to a possible
+ * fraud where an ATM is being drained
+ * with a stack of cloned cards.
+ */
+event RepeatedMaxWithdrawalsAlert {
+	string message;
+	string atmId;
+	Withdrawal w1;
+	Withdrawal w2;
+	Withdrawal w3;
+}
+
+/**
+ * Alerts us to a possible
+ * fraud where successive withdrawals
+ * within a time period using the same card
+ * are deemed improbable because of the
+ * distance between the ATMs involved.
+ */
+event ImprobableWithdrawalAlert {
+	string message;
+	Withdrawal w1;
+	Withdrawal w2;
+}
+
+/**
+ * Defines constants used in the demo.
+ */
+event Constants { 
+	/**
+	 * Threshold (in $USD) above which a single withdrawal arouses suspicions.
+	 */
+	constant integer THRESHOLD := 600;
+	
+	/**
+	 * Maximum speed (kph) a user can reasonably travel between ATMs
+	 * (Ground transporation is assumed, obviously.)
+	 */
+	constant float SPEED_LIMIT := 100.0;
+}
+
+/**
+ * Utility actions used in the demo.
+ */
+event Util {
+	/**	
+	 * Increases the value by the percentage given in the margin.
+	 * @param value The value to be increased.
+	 * @param margin The percentage by which the value is to be increased.
+	 * @returns A float representing the value increased by the specifed margin. 
+	 */
+	static action addSafetyMargin(float value, integer margin) returns float {
+		return value + (value * margin.toFloat()/100.0);
+	}
+	
+	/**
+	 * Returns a random number in the specifed range
+	 * according to a normal or Gaussian distribution.
+	 * @param range The range within which the random
+	 * number is to be generated.
+	 * @returns A random float in the specified range
+	 * according to a normal or Gaussian distribution.
+	 */
+	static action gaussian(integer range) returns float {
+		integer n := 10;
+		integer i := 0;
+		integer sum := 0;
+		while i < n {
+			sum := sum + range.rand();
+			i := i + 1;
+		}
+		return (sum/n).toFloat();
+	}
+}
+
+/**
+ * Starts the demo.
+ */
+event Start {
+}
+

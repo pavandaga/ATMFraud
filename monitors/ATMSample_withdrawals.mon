@@ -1,0 +1,242 @@
+/*
+ * $Copyright(c) 2013 Progress Software Corporation. All Rights Reserved.$ 
+ * $Copyright (c) 2013-2016 Software AG, Darmstadt, Germany and/or Software AG USA Inc., Reston, VA, USA, and/or its subsidiaries and/or its affiliates and/or their licensors.$
+ * Use, reproduction, transfer, publication or disclosure is prohibited except as specifically provided for in your License Agreement with Software AG
+ */ 
+
+
+/**
+ * 
+ * Apama Query Demo for detecting potentially fraudulent ATM withdrawals.
+ *
+ * This file contains 3 monitors that generate withdrawal events that are
+ * used in the demo that demonstrates using Apama Queries to detect two
+ * different possible types of ATM (cash machine) fraud.
+ *
+ * The definitions for the events used can be found in the file events.mon, and
+ * the queries in RepeatedMaxWithdrawals.qry and ImprobableWithdrawal.qry.
+ *
+ * All of the transactions take place in a network of 400 ATMs, equally spaced
+ * at distances of 100 kilometres (or miles). The locations used are the 400
+ * largest US cities, however the distances between them are not accurate. Rather,
+ * to keep the demo simple, cities are assigned randomly to positions on the grid
+ * so that the distances between them can be computed from their x, y co-ordinates 
+ * using Pythagoras's theorem.
+ *
+ * The first query looks for three large withdrawals at a single ATM within a short 
+ * period of time, as this could indicate someone using a stolen or cloned card to empty 
+ * a victim's account. The second query looks for two withdrawals using a single card at 
+ * different machines within an interval such that a single person could not have made 
+ * both withdrawals given the distance between the machines, and reasonable assumptions 
+ * about how fast someone could travel (at least by using ground transportation). This 
+ * pattern of activity would suggest that a victim's card had been cloned and one or more 
+ * fraudsters were making withdrawals using the that card's details at the different 
+ * machines. If either query detects a suspicious pattern of withdrawal activity then
+ * it emits an alert event.
+ *
+ * The first monitor simulates 20 genuine users who move randomly between ATMs at speeds
+ * normally distributed in a range slightly larger than the maximum speed users are
+ * anticipated to travel using ground transportation (100kph), modelling the fact that 
+ * some genuine users might break speed limits, and so could occasionally trigger the 
+ * second query.
+ *
+ * The second monitor simulates a single fraudster (the "Joker"), who makes between 2-6
+ * large value transactions from a single ATM within a short time period. Most of his
+ * transactions should be picked up by the first query.
+ *
+ * The third monitor simulates a gang of four criminals (again, all named after Batman 
+ * villains so that their withdrawals can be easily spotted) who randomly pick one of  
+ * the 20 good guys's card details, and then each make withdrawals using those details 
+ * within a short time period. Most of these transactions should be detected by the second 
+ * query.
+ *
+ */
+
+package apamax.atmfraud;
+
+/**
+ * Twenty genuine users make withdrawals from 
+ * randomly selected ATMS, the time taken between
+ * withdrawals being proportional to the distance
+ * between the ATMs.
+ */
+monitor GenuineUser {
+	// A network of 400 ATMs implemented as a 20 * 20 grid of equally spaced terminals.
+	// Names of the genuine users
+	sequence <string> users := ["Smith", "Jones", "Brown", "Patel", "Green", "Singh", "Cook", "Rogers", "Wilson", "Robson", "Russell", "Goodman", "McGinn", "Davies", "Neale", "Strawson", "Sanchez", "Glover", "Grey", "Williams"];
+	integer genuineUsers := 20;
+	// ATMs dispense cash in increments of 10s, so this factor will be 
+	// multiplied by 10 to calculate the actual maximum withdrawal size.
+	constant integer MAX_WITHDRAWAL_FACTOR := 75;	
+	// A genuine ATM user
+	User goodGuy;
+	// ATM used for withdrawal.
+	ATM currentATM;
+	
+	
+	action onload() {
+		on Start() {
+			generateUsers();
+		}
+	}
+	
+	action generateUsers() {
+		// Create 20 users and start them on their walkabouts.
+		integer counter := 0;
+		while counter < genuineUsers {
+			spawn generateUser(counter);
+			counter := counter + 1;
+		}		
+	}
+	
+	action generateUser(integer i) {
+		// Pick a random atm from which each user will start.
+		currentATM := ATMFactory.getATM();
+		// Create a user, with a card ID.
+		goodGuy := User(users[i],i+1000);
+		// Start the user doing withdrawals. 
+		doWithdrawals();
+	}
+	
+	action doWithdrawals() {
+		// Genuine User makes a withdrawal. 
+		Withdrawal w := Withdrawal(goodGuy.cardId, currentATM, (Util.gaussian(MAX_WITHDRAWAL_FACTOR)*10.0).round(), goodGuy.name, currentTime);
+		// So we can see the withdrawals in the engine receive panel ...
+		send w to "apamax.withdrawals";
+		// ... and send the event to the query
+		send w to "com.apama.queries";
+		// Pick another ATM and find out the distance to it from current ATM
+		ATM nextATM := ATMFactory.getATM();
+		float distance := currentATM.getDistance(nextATM);
+		// Genuine users move between ATMs at various speeds, including,
+		// on occasions, going over the "speed limit" (100 kph), but
+		// normally distributed over this range.
+		float speed := Util.gaussian(120);
+		// Time between withdrawals is proportionate to the distance between ATMs
+		float withdrawalInterval := distance / speed;
+		currentATM := nextATM;
+
+		on wait(withdrawalInterval) {
+			doWithdrawals();
+		}
+	}
+}
+
+/**
+ * Simulate a single malicious user with a stack of 
+ * stolen or cloned cards draining an ATM.
+ */
+monitor FraudulentUser1 {
+	// The malicious user.
+	User badGuy;
+	// A network of 400 ATMs implemented as a 20 * 20 grid of equally spaced terminals.
+	// The ATM used for each set of fraudulent withdrawals.
+	ATM currentATM;
+	// Lower threshold on what is defined as a large amount (80% of account suspicion threshold)
+	integer largeAmountThreshold := (Constants.THRESHOLD.toFloat() * 0.8).floor();
+	
+	action onload() {
+		// Our bad guy -- unlike genuine users, his card ID will change frequently.
+		badGuy := User("Joker", 9999);
+
+		on Start() {
+			doBadWithdrawals();
+		}
+	}
+	
+	
+	action doBadWithdrawals() {
+		// Pick an ATM to use for the next fraud
+		currentATM := ATMFactory.getATM();
+		// Make several (between 2 and 6) large withdrawals from the same ATM with several random cards.
+		integer withdrawals := integer.rand(5) + 2;
+		doLargeWithdrawals(withdrawals);
+		
+		// Wait a while before committing the next series of frauds.
+		on wait(7.5) {
+			doBadWithdrawals();
+		}
+	}
+	
+	action doLargeWithdrawals(integer i) {
+		if i > 0 {
+			// Random large amount from largeAmountThreshold up to 1000, in increments of 10.
+			integer largeAmount := integer.rand((1000 - largeAmountThreshold)/10) * 10 + largeAmountThreshold;
+			// This fraudster uses different cards to the other fraudsters. 
+			integer cardNumber := integer.rand(10000) + 9999;
+			Withdrawal w := Withdrawal(cardNumber, currentATM, largeAmount, badGuy.name, currentTime);
+			// So we can see the withdrawals in the engine receive panel ...
+			send w to "apamax.withdrawals";
+			// ... and send the event to the query
+			send w to "com.apama.queries";
+			i := i - 1;
+			on wait(0.5) {
+				doLargeWithdrawals(i);
+			}
+		}
+	}
+}
+
+
+/**
+ * Four fraudulent users who work as a team, one
+ * having skimmed a victim's card details so that
+ * all of them can then make withdrawals using the
+ * same card number at different ATMs within a very
+ * short time period. Most of these should be
+ * detected by the second query, if they occur
+ * in improbably close succession, given the distance
+ * between the ATM's. (Note that the speed limit
+ * used to determine if a user could have travelled
+ * between the 2 ATMs concerned, 100 kph, assumes
+ * some mode of ground transportation, not air travel.)
+ */
+monitor FraudulentUser2 {
+	// A network of 400 ATMs implemented as a 20 * 20 grid of equally spaced terminals.
+	// The bad guys.
+	sequence <User>	users := [User("Riddler", 10001), User("Penguin", 10002), User("Mad Hatter", 10003), User("Two-face", 10004)]; 
+	// Minimum (large) withdrawal size made by users.
+	constant integer MIN_WITHDRAWAL := 500;	
+	// The card number of the cloned card.
+	integer clonedCard;
+	
+	action onload() {	
+		
+		on Start() {
+			doBadWithdrawals();
+		}
+	}
+		
+	action doBadWithdrawals() {
+		// Pick one of the good guys's card number to use as a victim
+		clonedCard := integer.rand(20) + 1000;
+		doWithdrawalsWithClonedCard(users.size());
+		
+		// Wait a while before committing the next series of frauds.
+		on wait(7.5) {
+			doBadWithdrawals();
+		}
+	}
+	
+	// Each of the 4 bad guys makes a large withdrawal at (probably) a
+	// different ATM using the SAME card number.
+	action doWithdrawalsWithClonedCard(integer userIndex) {
+		if userIndex > 0 {
+			// ATM used for this withdrawal.
+			ATM currentATM := ATMFactory.getATM();
+			// Random large(ish) amount from 500-600. (These fraudsters
+			// do not want to draw attention to themselves by withdrawing
+			// too large amounts.)
+			integer largeAmount := integer.rand(10) * 10 + MIN_WITHDRAWAL;
+			Withdrawal w := Withdrawal(clonedCard, currentATM, largeAmount, users[userIndex - 1].name, currentTime);
+			// So we can see the withdrawals in the engine receive panel ...
+			send w to "apamax.withdrawals";
+			// ... and send the event to the query
+			send w to "com.apama.queries";
+			userIndex := userIndex - 1;
+			on wait(0.5) {
+				doWithdrawalsWithClonedCard(userIndex);
+			}
+		}
+	}
+}

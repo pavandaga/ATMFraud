@@ -1,0 +1,187 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Frameset//EN">
+<!-- $Copyright(c) 2008 Progress Software Corporation. All rights reserved.$ -->
+<!-- $Copyright (c) 2013, 2017 Software AG, Darmstadt, Germany and/or Software AG USA Inc., Reston, VA, USA, and/or its subsidiaries and/or its affiliates and/or their licensors.$ -->
+<!-- Use, reproduction, transfer, publication or disclosure is prohibited except as specifically provided for in your License Agreement with Software AG -->
+<html>
+   <head>
+      <meta http-equiv="content-type" content=
+      "text/html; charset=windows-1252">
+      <title>
+         ATM Fraud Demo
+      </title>
+<style type="text/css">
+BODY {
+ background-color: #ffffff;
+ font-size: 10pt;
+ font-family: Arial, Helvetica, sans-serif
+ margin-top: 0 pt;
+ margin-bottom: 0 pt;
+}
+
+H1 {
+ text-align: left;
+ font-weight: bold;
+ background-color: Transparent;
+ border-bottom-style: None;
+ margin-top: 0pt;
+ font-size: 16pt;
+ font-family: Arial, Helvetica, sans-serif;
+ line-height: Normal;
+ margin-bottom: 13.5pt;
+}
+
+H2 {
+ text-align: left;
+ font-weight: bold;
+ font-size: 14pt;
+ font-family: Arial, Helvetica, sans-serif;
+ margin-top: 0pt;
+ margin-bottom: 0pt;
+ color: #000000;
+}
+
+H3 {
+ text-align: left;
+ font-weight: bold;
+ font-family: Arial, Helvetica, sans-serif;
+ margin-left: 0pt;
+ margin-right: 0pt;
+ margin-top: 0pt;
+ margin-bottom: 0pt;
+ font-size: 12pt;
+}
+
+P {
+ text-align: left;
+ font-size: 10pt;
+ font-family: Arial, Helvetica, sans-serif;
+ margin-left: 0pt;
+ margin-top: 5pt;
+ margin-bottom: 5pt;
+}
+
+LI {
+ text-align: left;
+ font-size: 10pt;
+ font-family: Arial, Helvetica, sans-serif;
+ margin-left: 0pt;
+ margin-top: 5pt;
+ margin-bottom: 5pt;
+}
+
+TD {
+ font-size: 10pt;
+ font-family: Arial, Helvetica, sans-serif;
+ margin-left: 0pt;
+ margin-top: 5pt;
+ margin-bottom: 5pt;
+}
+
+TH {
+ font-size: 10 pt;
+ font-family: Arial, Helvetica, sans-serif;
+ margin-left: 0pt;
+ margin-top: 5pt;
+ margin-bottom: 5pt;
+ background-color: #E1E1E1;
+}
+</style>
+   </head>
+   <body>
+      <p>
+         <img alt="Apama" src="readme_files/Apama_logo.png">
+      </p>
+      <h1>
+         The ATM Fraud Demo
+      </h1>
+      <p>
+		The ATM Fraud demo shows Apama's discrete event matching capability in performing 
+		fraud detection by analyzing ATM (Automated Teller Machine) withdrawal patterns using Apama queries. The queries
+		can be parameterized to add thresholds/constraints for the alerts to be triggered. 
+      </p>
+      <p>
+		The demo contains a monitor that generates ATM withdrawal events, both
+		from genuine users, and from users committing two different types of fraud. 
+		All users move at varying speeds around a network of 400 ATMs making 
+		withdrawals for varying amounts.
+      </p>
+      <p>
+		The first type of fraud involves a gang of users who possess several cloned cards.
+		The query attempts to detect this by searching for transactions using
+		the same card number that occur within a suspiciously short time interval
+		at different machines, the assumption being that at least one of the transactions
+		will be by a fraudster using the cloned card. The other withdrawal may be by the 
+		genuine holder of the card. Both queries output warning events when a 
+		potential fraud is detected so that authorities can take further action.
+      </p>
+      <p>
+		The second type of fraud is where a user repeatedly withdraws large amounts
+		from a single ATM within a short time period using a stolen card, in
+		an attempt to withdraw as many funds as possible before the card is blocked.
+		The query that detects possible frauds of this type looks for three large 
+		withdrawals at a single machine within a short time period.      
+	  </p>
+	  <p>
+		The queries use a Metadata section to store various pieces of information about them,
+		which are then available in the Scenario Browser and may also be exposed in Apama
+   		dashboards.
+      </p>
+      <p>
+         &nbsp;&nbsp;&nbsp;&nbsp;
+      </p>
+      <p>
+         The ATM Fraud demo contains the following files:
+      </p>
+      <ul>
+         <li>
+            <strong>EPL:</strong> 
+            <ul>
+               <li>
+                  <code>atms.mon</code> &mdash;&nbsp;The locations of the 400 ATMs in the network.
+               </li>
+               <li>
+                  <code>events.mon</code> &mdash;&nbsp;The event definitions required by the sample.
+               </li>
+               <li>
+                  <code>AlertDataViews.mon</code> &mdash;&nbsp;DataViews to display withdrawals and
+                  alerts in a dashboard.
+               </li>
+               <li>
+                  <code>ATMSample_withdrawals.mon</code> &mdash;&nbsp;A monitor that generates ATM withdrawal events
+                  both genuine and fraudulent.
+               </li>
+               <li>
+                  <code>ImprobableWithdrawal.qry</code> &mdash;&nbsp;A query to detect the first type of 
+                  potentially fraudulent activity.
+               </li>
+               <li>
+                  <code>RepeatedMaxWithdrawals.qry</code> &mdash;&nbsp;Another query to detect the second type of potentially 
+                  fraudulent activity.
+               </li>
+               
+            </ul>
+         </li>
+         <li>
+            <strong>Dashboards:</strong> 
+            <ul>
+               <li>
+                  <code>ATMFraud.rtv</code> &mdash;&nbsp;The main display panel that shows withdrawals and fraudulent withdrawals.
+               </li>
+            </ul>
+         </li>
+      </ul>
+      <p>
+		On launching the ATM Fraud demo, the ATM Fraud dashboard is opened in the Dashboard Viewer. Observe that withdrawal events 
+		are being generated and fraudulent withdrawals are also being detected.
+      </p>
+      <ul>
+      	<li>
+			Repeated withdrawal fraud alerts are generated using <code>RepeatedMaxWithdrawals.qry</code> where <strong>threshold</strong> is set to 600 ($ USD) by default.
+		</li>
+		<li>
+			Improbable withdrawal location fraud alerts are generated using <code>ImprobableWithdrawal.qry</code> where <strong>speed_limit</strong> is set to 100.0 (kilometers per hour) by default.
+		</li>
+      </ul>
+   </body>
+</html>
+

@@ -1,0 +1,53 @@
+/*
+ * $Copyright(c) 2013 Progress Software Corporation. All Rights Reserved.$ 
+ * $Copyright (c) 2013-2015, 2017 Software AG, Darmstadt, Germany and/or Software AG USA Inc., Reston, VA, USA, and/or its subsidiaries and/or its affiliates and/or their licensors.$
+ * Use, reproduction, transfer, publication or disclosure is prohibited except as specifically provided for in your License Agreement with Software AG
+ */ 
+package apamax.atmfraud;
+
+/**
+ * An Apama Query to find suspicious withdrawals at ATMs
+ * where the same card is used at two ATMs far enough
+ * apart that a user could not have travelled between them
+ * in the available time.
+ */
+query ImprobableWithdrawalLocations {
+	/**
+	 * Save information about Query as Metadata.
+	 */
+	metadata {
+		"author":"Apama",
+		"version":"1"
+	}
+
+	parameters {
+		/**
+		 * Maximum speed (kph) a user can reasonably travel between ATMs.
+		 * (In this demo, ground transportation is assumed.)
+		 */
+		float speed_limit;
+	}
+
+	inputs {
+		/**
+		 * Partition by card number.
+		 */
+		Withdrawal() key cardNumber within 1 day;
+	}
+
+	/**
+	 * Find withdrawals using the same card where the distance between the ATMs is greater than 
+	 * could reasonably be covered in the time actually taken. 	
+	 * @sends Fraud2_Alert events to "apamax.fraud_alerts" channel.
+	 */
+	find Withdrawal:w1 -> Withdrawal:w2 where w1.atm.getDistance(w2.atm) > speed_limit * (w2.time-w1.time) { 
+		%send("eventType":".apamax.atmfraud.ImprobableWithdrawalAlert",
+				"title":"Send ImprobableWithdrawalAlert event", "description":"Sending a fraud alert warning of card skimming",
+				"channel":"\"apamax.fraud_alerts\"",
+				"fields": {
+					"message":"\"Potential fraud - card skimming\"",
+					"w1":"w1",
+					"w2":"w2"
+				});
+	}
+}

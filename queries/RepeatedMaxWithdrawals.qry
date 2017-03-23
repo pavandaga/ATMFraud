@@ -1,0 +1,56 @@
+/*
+ * $Copyright(c) 2013 Progress Software Corporation. All Rights Reserved.$ 
+ * $Copyright (c) 2013-2015, 2017 Software AG, Darmstadt, Germany and/or Software AG USA Inc., Reston, VA, USA, and/or its subsidiaries and/or its affiliates and/or their licensors.$
+ * Use, reproduction, transfer, publication or disclosure is prohibited except as specifically provided for in your License Agreement with Software AG
+ */ 
+package apamax.atmfraud;
+
+/**
+ * An Apama Query to find repeated high value withdrawals 
+ * at ATMs indicating that a user might have cloned some cards 
+ * and be using them to empty the victims' accounts.
+ */
+query DetectRepeatedMaxWithdrawals {
+	/**
+	 * Save information about Query as Metadata.
+	 */
+	metadata {
+		"author":"Apama",
+		"version":"1"
+	}
+	
+	parameters {
+		/**
+		 * Threshold (in $USD) above which  
+		 * multiple withdrawals arouse suspicions.
+		 */
+		integer threshold;
+	}
+
+	inputs {
+		/**
+		 * Partition by ATM. Filtering for large withdrawals here rather than in 
+		 * a where clause is more efficient as we only look for pattern matches 
+		 * on a subset of input events.
+		 */
+		Withdrawal(amount > threshold) key atm within 1 min;
+	}
+
+	/**			 
+	 * Detect 3 successive withdrawals for large amounts from the same ATM.
+	 * @sends Fraud1_Alert events to "apamax.fraud_alerts" channel.
+	 */
+	find Withdrawal:w1 -> Withdrawal:w2 -> Withdrawal:w3 {
+	 	%send("eventType":".apamax.atmfraud.RepeatedMaxWithdrawalsAlert",
+	 			"title":"Send RepeatedMaxWithdrawalsAlert event", "description":"Send Fraud alert warning of repeated large withdrawals",
+	 			"channel":"\"apamax.fraud_alerts\"",
+	 			"fields": {
+	 				"message":"\"Potential fraud - repeated large withdrawals in small time period\"",
+	 				"atmId":"atm.id",
+	 				"w1":"w1",
+	 				"w2":"w2",
+	 				"w3":"w3"
+	 			});
+	}
+}
+
